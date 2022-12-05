@@ -1,60 +1,53 @@
-#Try block for Error Handling
-try
+#$Assign Variables
+$ADRoot = (Get-ADDomain).DistinguishedName
+$DnsRoot = (Get-ADDomain).DNSRoot
+$OUCanonicalName = "Finance"
+$OUDisplayName = "Finance Department"
+$ADPath = "OU=$($OUCanonicalName),$($ADRoot)"
+
+# Creating OU
+try 
 {
-    # While Loop up until user input is 5
-    while ($UserInput -ne 5)
-    {
-        #List of Options displayed to user
-        Write-Host "
-        1. Creates DailyLog.txt of files with .log extention
-        2. Sorted Files in Alphabetical order into SortedFiles.txt
-        3. Current CPU and Memory Usage
-        4. Running Processes listed by virtual size
-        5. Exit the script"
-    
-        #Asks user to pick an option
-        Write-Host "Choose an option (1-5):"
-        $UserInput = Read-Host
-
-        # Different options selected by user w/ Switch statements
-        switch($UserInput)
-        {
-            1 { 
-                # When user chooses option 1
-                Write-Host "Creating DailyLog.txt"
-                "TIMESTAMP: " + (Get-Date) | Out-File -Filepath $PSScriptRoot\DailyLog.txt -Append
-                Get-ChildItem -Path $PSScriptRoot -Filter *.log | Out-File -FilePath $PSScriptRoot\DailyLog.txt -Append 
-            }
-    
-            2 { 
-                # When user chooses option 2
-                Write-Host "Creating SortedFiles.txt"
-                Get-ChildItem "$PSScriptRoot" | Sort-Object Name | Format-Table -AutoSize -Wrap |
-                Out-File -FilePath "$PSScriptRoot\SortedFiles.txt" 
-            }
-
-            3 { 
-                #When user chooses option 3
-                Write-Host "Gathering CPU and Memory Statistics"  
-                $CounterList = "\Processor(_Total)\% Processor Time", "\Memory\Committed Bytes"                
-                Get-Counter -Counter $CounterList -MaxSamples 4 -SampleInterval 5 
-            }
-    
-            4 { 
-                # When user chooses option 4
-                Write-Host "Listing Running Processes"
-                Get-Process | Select-Object ID, Name, VM | Sort-Object VM | Out-GridView 
-            }
-    
-            5 { 
-                #When user chooses option 5 (Exits)
-                Write-Host -ForegroundColor Yellow "Now Exiting" 
-            }
-        }
-    }
+    # Checks before creating OU 
+    $existingOU = Get-ADOrganizationalUnit -Filter "Name -like 'Finance'"
+    if ($existingOU) {
+        Write-Host -ForegroundColor Green "[AD]$($OUCanonicalName) Already Exists"
+        Remove-ADOrganizationalUnit -Identity $ADPath -Recursive -confirm:$False
+        Write-Host -ForegroundColor Green "[AD]$($OUCanonicalName) OU Deleted"
+        Write-Host -ForegroundColor Green "[AD]$($OUCanonicalName) Creating new OU"
+        New-ADOrganizationalUnit -Path $ADRoot -Name $OUCanonicalName -DisplayName $OUDisplayName -ProtectedFromAccidentalDeletion $False
+        Write-Host -ForegroundColor Green "[AD]$($OUCanonicalName) OU Created"
+    } else {
+        Write-Host -ForegroundColor Green "[AD]:$($OUCanonicalName) does not exist" 
+        New-ADOrganizationalUnit -Path $ADRoot -Name $OUCanonicalName -DisplayName $OUDisplayName -ProtectedFromAccidentalDeletion $False
+        Write-Host -ForegroundColor Green "[AD]:$($OUCanonicalName) OU created" 
+    } 
 }
-# Catch block for exception handling
-catch
-{
+catch {
     Write-Host -ForegroundColor Red "An Error Occured"
 }
+
+# Adding Active Directory Users from a CSV File
+$NewADUsers = Import-Csv -Path C:\Source\Requirements2\financePersonnel.csv
+try
+{
+    ForEach ($ADUser in $NewADUsers)
+    {
+        $First = $ADUser.First_Name
+        $Last = $ADUser.Last_Name
+        $Name = $First + " " + $Last
+        $Postal = $ADUser.PostalCode
+        $Office = $ADUser.OfficePhone
+        $Mobile = $ADUser.MobilePhone
+        
+        New-ADUser -GivenName $First -Surname $Last -Name $Name -DisplayName $Name -PostalCode $Postal -MobilePhone $Mobile -OfficePhone $Office -Path $ADPath }
+        Write-Host -ForegroundColor Green "[AD]: Active Directory Tasks Complete" 
+}
+# Catch block for error handling
+catch
+{
+    Write-Host -ForegroundColor Red "An Error Occured" 
+}  
+
+#Output file
+Get-ADUser -Filter * -SearchBase "ou=Finance,dc=consultingfirm,dc=com" -Properties DisplayName,PostalCode,OfficePhone,MobilePhone | Out-File -FilePath C:\Source\Requirements2\AdResults.txt
